@@ -422,19 +422,37 @@ function sendToSheets(type, data) {
 
 // ---- Firebase 실시간 리스너 ----
 let activeListeners = [];
+let renderTimer = null;
+let listenersReady = false;
+
+function scheduleRender() {
+  if (renderTimer) return;
+  renderTimer = setTimeout(() => {
+    renderTimer = null;
+    render();
+  }, 100);
+}
 
 function setupFirebaseListeners(cls) {
   // 기존 리스너 해제
   activeListeners.forEach(unsub => unsub());
   activeListeners = [];
+  listenersReady = false;
 
   const clsKey = 'class_' + cls;
+  let loadCount = 0;
+
+  function onDataLoaded() {
+    loadCount++;
+    if (loadCount >= 3) listenersReady = true;
+    if (listenersReady) scheduleRender();
+  }
 
   // Submissions 리스너
   const subRef = db.ref(`workshop/${clsKey}/submissions`);
   subRef.on('value', snap => {
     fbCache.submissions[cls] = snap.val() || {};
-    render();
+    onDataLoaded();
   });
   activeListeners.push(() => subRef.off());
 
@@ -442,7 +460,7 @@ function setupFirebaseListeners(cls) {
   const voteRef = db.ref(`workshop/${clsKey}/votes`);
   voteRef.on('value', snap => {
     fbCache.votes[cls] = snap.val() || {};
-    render();
+    onDataLoaded();
   });
   activeListeners.push(() => voteRef.off());
 
@@ -450,7 +468,7 @@ function setupFirebaseListeners(cls) {
   const peerRef = db.ref(`workshop/${clsKey}/peers`);
   peerRef.on('value', snap => {
     fbCache.peers[cls] = snap.val() || {};
-    render();
+    onDataLoaded();
   });
   activeListeners.push(() => peerRef.off());
 }
@@ -533,8 +551,10 @@ function setState(updates) {
 
 // ============ Render Engine ============
 function render() {
-  const app = document.getElementById('app');
-  switch (state.screen) {
+  try {
+    const app = document.getElementById('app');
+    if (!app) return;
+    switch (state.screen) {
     case 'splash': app.innerHTML = renderSplash(); break;
     case 'classSelect': app.innerHTML = renderClassSelect(); break;
     case 'teamSelect': app.innerHTML = renderTeamSelect(); break;
@@ -556,6 +576,9 @@ function render() {
   }
   if (state.toast) {
     app.innerHTML += `<div class="toast">${state.toast}</div>`;
+  }
+  } catch (e) {
+    console.error('Render error:', e);
   }
 }
 
